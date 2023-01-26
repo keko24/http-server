@@ -85,32 +85,36 @@ void parse_initial(char *initialLine, char *initialLineParsed[INIT_LINE_ARGS]) {
     initialLineParsed[2] = strtok_r(NULL, " ", &saveptr);
 }
 
-int parse_header(char *headerLine, char *headerLineParsed[HEAD_LINE_ARGS], int count) { 
-    char *saveptr;
+int parse_header(char *headerLine, char *headerLineParsed[HEAD_LINE_ARGS]) { 
+    char *saveptr, count = 0;
     for (char *token = strtok_r(headerLine, " ", &saveptr); token != NULL; token = strtok_r(NULL, " ", &saveptr)) {
-        headerLineParsed[count++] = token;
-        printf("%s\n", headerLineParsed[count - 1]);
+        headerLineParsed[count] = malloc(strlen(token));
+        strcpy(headerLineParsed[count++], token);
     }
     return count;
 }
 
 int parse_header_lines(int sock, char *buffer, char *headerLinesParsed[HEAD_LINES][HEAD_LINE_ARGS]) {
-    int headerCount = -1, count = 0, bytes;
+    int headerCount = -1, count = 0, bytes = 0, i = 0, curr = 0;
+    char *temp[HEAD_LINES];
     while ((bytes = read_line(sock, buffer)) > 0) {
         if (!strcmp(buffer, "\r\n")) {
             break;
         }
-        if (buffer[0] == 'h' || buffer[0] == 'H') {
-            count = 0;
-            count = parse_header(buffer, headerLinesParsed[++headerCount], count);
-            headerLinesParsed[headerCount][count] = NULL;
+        count = parse_header(buffer, temp);
+        if (temp[0][strlen(temp[0]) - 1] == ':') {
+            curr = 0;
+            headerCount++;
         }
-        else {
-            count = parse_header(buffer, headerLinesParsed[headerCount], count);
-            headerLinesParsed[headerCount][count] = NULL;
+        for (i = 0; i < count; i++) {
+            headerLinesParsed[headerCount][curr + i] = malloc(strlen(temp[i]));
+            strcpy(headerLinesParsed[headerCount][curr + i], temp[i]);
+            free(temp[i]);
         }
+        curr += count;
+        headerLinesParsed[headerCount][curr] = NULL;
     }
-    return headerCount;
+    return headerCount + 1;
 }
 
 void process_client_message(int sock) {
@@ -134,12 +138,14 @@ void process_client_message(int sock) {
         } 
         printf("\n");
     }
-    /*while ((bytes = read_line(sock, buffer)) > 0) {
+    /*
+    while ((bytes = read_line(sock, buffer)) > 0) {
         if (!strcmp(buffer, "\r\n")) {
             break;
         }
         printf("%d %s", bytes, buffer);
-    }*/
+    }
+    */
     bytes = write(sock, "I got your message.\n", 20);
     if (bytes < 0) {
         error("ERROR writing to socket");
