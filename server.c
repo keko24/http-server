@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <poll.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -78,6 +79,16 @@ int read_line(int sock, char *buffer) {
     return count;
 }
 
+int read_line_body(struct pollfd fds[1], int sock, char *buffer) {
+    char c;
+    int count = 0, flag = 0;
+    while (poll(fds, sock, 0) > 0 && (c = get_ch(sock)) != EOF) {
+        buffer[count++] = c;
+    }
+    buffer[count] = '\0';
+    return count;
+}
+
 void parse_initial(char *initialLine, char *initialLineParsed[INIT_LINE_ARGS]) {
     char *saveptr;
     initialLineParsed[0] = strtok_r(initialLine, " ", &saveptr);
@@ -86,7 +97,8 @@ void parse_initial(char *initialLine, char *initialLineParsed[INIT_LINE_ARGS]) {
 }
 
 int parse_header(char *headerLine, char *headerLineParsed[HEAD_LINE_ARGS]) { 
-    char *saveptr, count = 0;
+    char *saveptr;
+    int count = 0;
     for (char *token = strtok_r(headerLine, " ", &saveptr); token != NULL; token = strtok_r(NULL, " ", &saveptr)) {
         headerLineParsed[count] = malloc(strlen(token));
         strcpy(headerLineParsed[count++], token);
@@ -94,30 +106,33 @@ int parse_header(char *headerLine, char *headerLineParsed[HEAD_LINE_ARGS]) {
     return count;
 }
 
-int parse_header_lines(int sock, char *buffer, char *headerLinesParsed[HEAD_LINES][HEAD_LINE_ARGS]) {
+int parse_header_lines(int sock, char *buffer, char *headersParsed[HEAD_LINES][HEAD_LINE_ARGS]) {
     int headerCount = -1, count = 0, bytes = 0, i = 0, curr = 0;
-    char *temp[HEAD_LINES];
+    char *headerLineParsed[HEAD_LINE_ARGS];
     while ((bytes = read_line(sock, buffer)) > 0) {
         if (!strcmp(buffer, "\r\n")) {
             break;
         }
-        count = parse_header(buffer, temp);
-        if (temp[0][strlen(temp[0]) - 1] == ':') {
+        count = parse_header(buffer, headerLineParsed);
+        if (headerLineParsed[0][strlen(headerLineParsed[0]) - 1] == ':') {
             curr = 0;
             headerCount++;
         }
         for (i = 0; i < count; i++) {
-            headerLinesParsed[headerCount][curr + i] = malloc(strlen(temp[i]));
-            strcpy(headerLinesParsed[headerCount][curr + i], temp[i]);
-            free(temp[i]);
+            headersParsed[headerCount][curr + i] = malloc(strlen(headerLineParsed[i]));
+            strcpy(headersParsed[headerCount][curr + i], headerLineParsed[i]);
+            free(headerLineParsed[i]);
         }
         curr += count;
-        headerLinesParsed[headerCount][curr] = NULL;
+        headersParsed[headerCount][curr] = NULL;
     }
     return headerCount + 1;
 }
 
 void process_client_message(int sock) {
+    struct pollfd fds[1];
+    fds[0].fd = sock;
+    fds[0].events = POLLIN;
     int bytes, level = 0;
     char buffer[BUFF_SIZE];
     bzero(buffer, BUFF_SIZE);
@@ -138,15 +153,16 @@ void process_client_message(int sock) {
         } 
         printf("\n");
     }
-    /*
-    while ((bytes = read_line(sock, buffer)) > 0) {
-        if (!strcmp(buffer, "\r\n")) {
+    int totalAmountOfBytes = 0;
+    while ((bytes = read_line_body(fds, sock, buffer)) > 0) {
+        printf("%d %s\n", bytes, buffer);
+        printf("%d\n", atoi(headerLinesParsed[headerLinesCount - 1][1]));
+        totalAmountOfBytes += bytes;
+        if (atoi(headerLinesParsed[headerLinesCount - 1][1]) == totalAmountOfBytes) {
             break;
         }
-        printf("%d %s", bytes, buffer);
     }
-    */
-    bytes = write(sock, "I got your message.\n", 20);
+    bytes = write(sock, "HTTP/1.1 200 OK\r\n", 30);
     if (bytes < 0) {
         error("ERROR writing to socket");
     }
